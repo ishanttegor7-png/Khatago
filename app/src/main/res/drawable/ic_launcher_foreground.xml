@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Centered within the safe 66dp zone (from 21 to 87 in 108dp viewport) -->
+    <!-- Khata Book Base (Cover) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,26 L70,26 C73.3,26 76,28.7 76,32 L76,76 C76,79.3 73.3,82 70,82 L34,82 C30.7,82 28,79.3 28,76 L28,32 C28,28.7 30.7,26 34,26 Z" />
+    
+    <!-- Spine Accent in Deep Green -->
+    <path
+        android:fillColor="#0D5C3A"
+        android:pathData="M28,32 C28,28.7 30.7,26 34,26 L38,26 L38,82 L34,82 C30.7,82 28,79.3 28,76 Z" />
+        
+    <!-- Golden Ribbon/Bookmark -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M60,26 L66,26 L66,42 L63,38 L60,42 Z" />
+
+    <!-- Ledger Horizontal Lines -->
+    <path
+        android:fillColor="#0D5C3A"
+        android:pathData="M44,36 L56,36 C56.6,36 57,36.4 57,37 C57,37.6 56.6,38 56,38 L44,38 C43.4,38 43,37.6 43,37 C43,36.4 43.4,36 44,36 Z" />
+
+    <!-- Rupee Sign Symbol in Center -->
+    <path
+        android:fillColor="#0D5C3A"
+        android:pathData="M46,47 L62,47 C62.5,47 63,47.5 63,48 C63,48.5 62.5,49 62,49 L56.5,49 C58.2,50.1 59.2,51.8 59.4,53.8 L62,53.8 C62.5,53.8 63,54.3 63,54.8 C63,55.3 62.5,55.8 62,55.8 L59.3,55.8 C58.8,58.8 56.2,61 53,61 L49,61 L57.8,70.5 C58.1,70.8 58.1,71.4 57.7,71.7 C57.5,71.9 57.2,72 57,72 C56.7,72 56.4,71.9 56.2,71.6 L45.2,59.8 C44.9,59.4 45.1,58.8 45.6,58.8 L53,58.8 C55,58.8 56.7,57.3 57.1,55.3 L46,55.3 C45.5,55.3 45,54.8 45,54.3 C45,53.8 45.5,53.3 46,53.3 L57,53.3 C56.6,51.8 55.4,50.6 53.8,50.3 L46,50.3 C45.5,50.3 45,49.8 45,49.3 C45,48.8 45.5,47 46,47 Z" />
+</vector>

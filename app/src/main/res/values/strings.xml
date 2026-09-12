@@ -1,0 +1,45 @@
+<resources>
+    <string name="app_name">KhataGo</string>
+    <string name="app_tagline">Har hisaab, ek jagah.</string>
+    
+    <!-- Navigation Tabs -->
+    <string name="nav_home">Home</string>
+    <string name="nav_customers">Customers</string>
+    <string name="nav_products">Stock</string>
+    <string name="nav_khata">Khata</string>
+    <string name="nav_invoice">Invoice</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Financial Labels -->
+    <string name="label_lena_hai">Total Lena Hai</string>
+    <string name="label_dena_hai">Total Dena Hai</string>
+    <string name="label_todays_hisaab">Today\'s Hisaab</string>
+    <string name="label_total_customers">Total Customers</string>
+    <string name="label_all_clear">All Clear</string>
+    <string name="label_pending">Pending</string>
+    <string name="label_paid">Paid</string>
+
+    <!-- Quick Actions -->
+    <string name="action_add_udhaar">Add Udhaar</string>
+    <string name="action_add_payment">Add Payment</string>
+    <string name="action_add_customer">Add Customer</string>
+    <string name="action_create_invoice">Create Invoice</string>
+    <string name="action_send_reminder">Send Reminder</string>
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+
+    <!-- Empty States -->
+    <string name="empty_customers_title">No customers yet</string>
+    <string name="empty_customers_desc">Add your first customer to start tracking udhaar and payments.</string>
+    <string name="empty_transactions_title">No transactions yet</string>
+    <string name="empty_transactions_desc">Record credit (udhaar) or payments to see your ledger here.</string>
+    <string name="empty_invoices_title">No invoices yet</string>
+    <string name="empty_invoices_desc">Create simple professional invoices for your shop customers.</string>
+
+    <!-- Validation Errors -->
+    <string name="error_name_required">Please enter customer name</string>
+    <string name="error_phone_required">Please enter valid 10-digit mobile number</string>
+    <string name="error_business_name_required">Please enter business name</string>
+    <string name="error_item_required">Please enter product or service name</string>
+    <string name="error_price_required">Please enter valid price</string>
+</resources>

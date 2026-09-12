@@ -1,0 +1,6 @@
+{
+  "name": "KhataGo",
+  "description": "Har hisaab, ek jagah. Professional Indian business khata, credit, and invoice management app.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

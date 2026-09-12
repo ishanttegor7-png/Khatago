@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Firebase Web Client ID (from Firebase Console -> Authentication -> Sign-in method -> Google,
+      or Web client under Google Cloud Console Credentials).
+      If google-services.json is in app/, this will be supplied as default_web_client_id.
+    -->
+    <string name="firebase_web_client_id" translatable="false"></string>
+
+    <!--
+      Optional manual Firebase project configuration if google-services.json is not placed in app/
+    -->
+    <string name="firebase_project_id" translatable="false"></string>
+    <string name="firebase_application_id" translatable="false"></string>
+    <string name="firebase_api_key" translatable="false"></string>
+</resources>
