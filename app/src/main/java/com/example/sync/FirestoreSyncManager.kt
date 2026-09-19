@@ -50,7 +50,8 @@ data class RestoreSummary(
   val invoicesRestored: Int = 0,
   val productsRestored: Int = 0,
   val movementsRestored: Int = 0,
-  val profileRestored: Boolean = false
+  val profileRestored: Boolean = false,
+  val profile: BusinessProfile? = null
 )
 
 class FirestoreSyncManager(
@@ -75,7 +76,13 @@ class FirestoreSyncManager(
 
   fun isFirebaseConfigured(): Boolean {
     return try {
-      FirebaseApp.getApps(context).isNotEmpty()
+      if (FirebaseApp.getApps(context).isEmpty()) return false
+      val app = FirebaseApp.getInstance()
+      val apiKey = app.options.apiKey
+      apiKey.isNotBlank() &&
+        !apiKey.startsWith("AIzaSyD-KhataGo") &&
+        apiKey != "dummy_api_key" &&
+        !apiKey.contains("placeholder", ignoreCase = true)
     } catch (e: Exception) {
       false
     }
@@ -99,10 +106,9 @@ class FirestoreSyncManager(
 
       if (!isFirebaseConfigured()) {
         _syncStatus.value = SyncStatus.NOT_CONFIGURED
-        _lastSyncMessage.value = "Cloud sync paused: google-services.json is not configured."
-        return@withContext Result.failure(
-          Exception("Firebase is not configured. Please add google-services.json to the app/ directory to enable live Firestore cloud sync.")
-        )
+        _lastSyncMessage.value = "Local Storage Active: All records safely saved on device."
+        _lastSyncTimestamp.value = System.currentTimeMillis()
+        return@withContext Result.success(SyncSummary(timestamp = System.currentTimeMillis()))
       }
 
       try {
@@ -110,7 +116,7 @@ class FirestoreSyncManager(
         val userDoc = firestore.collection("users").document(uid)
 
         // 1. Sync Customers
-        val pendingCustomers = customerDao.getPendingCustomers()
+        val pendingCustomers = customerDao.getPendingCustomersForUser(uid)
         var custCount = 0
         for (cust in pendingCustomers) {
           val docRef = userDoc.collection("customers").document(cust.id)
@@ -137,7 +143,7 @@ class FirestoreSyncManager(
         }
 
         // 2. Sync Transactions
-        val pendingTransactions = transactionDao.getPendingTransactions()
+        val pendingTransactions = transactionDao.getPendingTransactionsForUser(uid)
         var txCount = 0
         for (tx in pendingTransactions) {
           val docRef = userDoc.collection("transactions").document(tx.id)
@@ -165,7 +171,7 @@ class FirestoreSyncManager(
         }
 
         // 3. Sync Invoices
-        val pendingInvoices = invoiceDao.getPendingInvoices()
+        val pendingInvoices = invoiceDao.getPendingInvoicesForUser(uid)
         var invCount = 0
         for (inv in pendingInvoices) {
           val docRef = userDoc.collection("invoices").document(inv.id)
@@ -224,7 +230,7 @@ class FirestoreSyncManager(
         }
 
         // 4. Sync Products
-        val pendingProducts = productDao.getPendingProducts()
+        val pendingProducts = productDao.getPendingProductsForUser(uid)
         var prodCount = 0
         for (prod in pendingProducts) {
           val docRef = userDoc.collection("products").document(prod.id)
@@ -255,7 +261,7 @@ class FirestoreSyncManager(
         }
 
         // 5. Sync Stock Movements
-        val pendingMovements = stockMovementDao.getPendingMovements()
+        val pendingMovements = stockMovementDao.getPendingMovementsForUser(uid)
         var moveCount = 0
         for (move in pendingMovements) {
           val docRef = userDoc.collection("stock_movements").document(move.id)
@@ -294,25 +300,25 @@ class FirestoreSyncManager(
           userDoc.collection("profile").document("main").set(profMap, SetOptions.merge()).await()
         }
 
-        // 7. Sync Subscription Entitlement
+        // 7. Sync Subscription Entitlement (Safe: Server is authoritative, client never writes itself as PREMIUM)
         if (userEntitlementDao != null) {
           try {
-            val entitlement = userEntitlementDao.getEntitlementForUserDirect(uid)
-              ?: userEntitlementDao.getLatestEntitlementDirect()
-            if (entitlement != null) {
-              val subDoc = userDoc.collection("subscription").document("current")
-              val subMap = hashMapOf(
-                "id" to entitlement.id,
+            val subDoc = userDoc.collection("subscription").document("current")
+            val existingCloudSub = subDoc.get().await()
+            if (!existingCloudSub.exists()) {
+              // Only initialize if non-existent in cloud, strictly as FREE
+              val freeMap = hashMapOf(
+                "id" to "entitlement_$uid",
                 "userId" to uid,
-                "planType" to entitlement.planType,
-                "isActive" to entitlement.isActive,
-                "startMillis" to entitlement.startMillis,
-                "expiryMillis" to (entitlement.expiryMillis ?: 0L),
-                "createdAt" to entitlement.createdAt,
-                "updatedAt" to entitlement.updatedAt,
+                "planType" to "FREE",
+                "isActive" to true,
+                "startMillis" to System.currentTimeMillis(),
+                "expiryMillis" to 0L,
+                "createdAt" to System.currentTimeMillis(),
+                "updatedAt" to System.currentTimeMillis(),
                 "syncStatus" to "SYNCED"
               )
-              subDoc.set(subMap, SetOptions.merge()).await()
+              subDoc.set(freeMap, SetOptions.merge()).await()
             }
           } catch (_: Exception) {}
         }
@@ -338,9 +344,10 @@ class FirestoreSyncManager(
     }
 
     if (!isFirebaseConfigured()) {
-      return@withContext Result.failure(
-        Exception("Firebase is not configured. Please add google-services.json to the app/ directory.")
-      )
+      _syncStatus.value = SyncStatus.NOT_CONFIGURED
+      _lastSyncMessage.value = "Local Storage Active: All records loaded from device database."
+      _lastSyncTimestamp.value = System.currentTimeMillis()
+      return@withContext Result.success(RestoreSummary())
     }
 
     _syncStatus.value = SyncStatus.SYNCING
@@ -514,15 +521,22 @@ class FirestoreSyncManager(
         try {
           val subDoc = userDoc.collection("subscription").document("current").get().await()
           if (subDoc.exists()) {
+            val rawPlan = subDoc.getString("planType") ?: "FREE"
+            val expiry = subDoc.getLong("expiryMillis")?.takeIf { it > 0 }
+            val now = System.currentTimeMillis()
+            val isExpired = expiry != null && now > expiry
+            val isPlanActive = (subDoc.getBoolean("isActive") ?: true) && !isExpired
+            val effectivePlanType = if (isExpired) "FREE" else rawPlan
+
             val ent = UserEntitlementEntity(
               id = subDoc.getString("id") ?: "entitlement_$uid",
               userId = uid,
-              planType = subDoc.getString("planType") ?: "FREE",
-              isActive = subDoc.getBoolean("isActive") ?: true,
-              startMillis = subDoc.getLong("startMillis") ?: System.currentTimeMillis(),
-              expiryMillis = subDoc.getLong("expiryMillis")?.takeIf { it > 0 },
-              createdAt = subDoc.getLong("createdAt") ?: System.currentTimeMillis(),
-              updatedAt = subDoc.getLong("updatedAt") ?: System.currentTimeMillis(),
+              planType = effectivePlanType,
+              isActive = isPlanActive,
+              startMillis = subDoc.getLong("startMillis") ?: now,
+              expiryMillis = expiry,
+              createdAt = subDoc.getLong("createdAt") ?: now,
+              updatedAt = subDoc.getLong("updatedAt") ?: now,
               syncStatus = "SYNCED"
             )
             userEntitlementDao.insertOrUpdate(ent)
@@ -530,10 +544,35 @@ class FirestoreSyncManager(
         } catch (_: Exception) {}
       }
 
+      // 7. Restore Business Profile
+      var restoredProfile: BusinessProfile? = null
+      try {
+        val profDoc = userDoc.collection("profile").document("main").get().await()
+        if (profDoc.exists()) {
+          restoredProfile = BusinessProfile(
+            businessName = profDoc.getString("businessName") ?: "KhataGo Merchant",
+            ownerName = profDoc.getString("ownerName") ?: "Shop Owner",
+            phone = profDoc.getString("phone") ?: "",
+            address = profDoc.getString("address") ?: "",
+            upiId = profDoc.getString("upiId") ?: ""
+          )
+        }
+      } catch (_: Exception) {}
+
       _syncStatus.value = SyncStatus.SYNCED
       _lastSyncTimestamp.value = System.currentTimeMillis()
       _lastSyncMessage.value = "Data restored successfully ($custCount customers, $txCount transactions, $invCount invoices, $prodCount products)."
-      Result.success(RestoreSummary(custCount, txCount, invCount, prodCount, moveCount, true))
+      Result.success(
+        RestoreSummary(
+          customersRestored = custCount,
+          transactionsRestored = txCount,
+          invoicesRestored = invCount,
+          productsRestored = prodCount,
+          movementsRestored = moveCount,
+          profileRestored = restoredProfile != null,
+          profile = restoredProfile
+        )
+      )
     } catch (e: Exception) {
       _syncStatus.value = SyncStatus.FAILED
       _lastSyncMessage.value = "Restore failed: ${e.localizedMessage ?: "Unknown error"}"

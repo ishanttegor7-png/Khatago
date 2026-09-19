@@ -12,6 +12,8 @@ import com.example.data.repository.AddCustomerResult
 import com.example.data.repository.InvoiceItemInput
 import com.example.data.repository.InvoiceOperationResult
 import com.example.data.repository.KhataRepository
+import com.example.data.repository.PaymentRepository
+import com.example.data.repository.PaymentRepositoryImpl
 import com.example.data.repository.ProductOperationResult
 import com.example.data.repository.StockOperationResult
 import com.example.data.repository.TransactionResult
@@ -24,6 +26,13 @@ import com.example.model.StockMovement
 import com.example.model.SubscriptionEntitlement
 import com.example.model.Transaction
 import com.example.model.TransactionType
+import com.example.payment.PaymentServiceImpl
+import com.example.payment.backend.FirestoreAuthoritativeVerificationService
+import com.example.payment.model.PaymentCheckResult
+import com.example.payment.model.PaymentInitiationResult
+import com.example.payment.model.PaymentUiState
+import com.example.payment.model.PaymentVerificationResult
+import com.example.payment.model.RestorePremiumResult
 import com.example.sync.FirestoreSyncManager
 import com.example.sync.SyncStatus
 import com.example.util.NetworkMonitor
@@ -64,6 +73,16 @@ class KhataViewModel @JvmOverloads constructor(
     AppDatabase.getDatabase(application).stockMovementDao(),
     networkMonitor,
     AppDatabase.getDatabase(application).userEntitlementDao()
+  ),
+  val paymentRepository: PaymentRepository = PaymentRepositoryImpl(
+    AppDatabase.getDatabase(application).paymentDao(),
+    PaymentServiceImpl(
+      paymentDao = AppDatabase.getDatabase(application).paymentDao(),
+      userEntitlementDao = AppDatabase.getDatabase(application).userEntitlementDao(),
+      authManager = authManager,
+      networkMonitor = networkMonitor,
+      verificationService = FirestoreAuthoritativeVerificationService(networkMonitor)
+    )
   )
 ) : AndroidViewModel(application) {
 
@@ -205,15 +224,21 @@ class KhataViewModel @JvmOverloads constructor(
   }
 
   suspend fun addCustomerAsync(name: String, phone: String, address: String = ""): AddCustomerResult {
-    return repository.addCustomer(name, phone, address)
+    val res = repository.addCustomer(name, phone, address)
+    if (res is AddCustomerResult.Success) triggerAutoSync()
+    return res
   }
 
   suspend fun updateCustomerAsync(id: String, name: String, phone: String, address: String): Boolean {
-    return repository.updateCustomer(id, name, phone, address)
+    val res = repository.updateCustomer(id, name, phone, address)
+    if (res) triggerAutoSync()
+    return res
   }
 
   suspend fun deleteCustomerAsync(id: String): Boolean {
-    return repository.deleteCustomer(id)
+    val res = repository.deleteCustomer(id)
+    if (res) triggerAutoSync()
+    return res
   }
 
   suspend fun addTransactionAsync(
@@ -223,13 +248,15 @@ class KhataViewModel @JvmOverloads constructor(
     amount: Double,
     note: String
   ): TransactionResult {
-    return repository.addTransaction(
+    val res = repository.addTransaction(
       customerId = customerId,
       customerName = customerName,
       type = type,
       amount = amount,
       note = note
     )
+    if (res is TransactionResult.Success) triggerAutoSync()
+    return res
   }
 
   suspend fun createInvoiceAsync(
@@ -245,7 +272,7 @@ class KhataViewModel @JvmOverloads constructor(
     notes: String = "",
     dueDate: String = ""
   ): InvoiceOperationResult {
-    return repository.createInvoice(
+    val res = repository.createInvoice(
       customerId = customerId,
       customerName = customerName,
       customerPhone = customerPhone,
@@ -259,6 +286,8 @@ class KhataViewModel @JvmOverloads constructor(
       dueDate = dueDate,
       businessProfile = businessProfile.value
     )
+    if (res is InvoiceOperationResult.Success) triggerAutoSync()
+    return res
   }
 
   suspend fun updateInvoiceAsync(
@@ -274,7 +303,7 @@ class KhataViewModel @JvmOverloads constructor(
     notes: String = "",
     dueDate: String = ""
   ): InvoiceOperationResult {
-    return repository.updateInvoice(
+    val res = repository.updateInvoice(
       invoiceId = invoiceId,
       customerId = customerId,
       customerName = customerName,
@@ -287,6 +316,8 @@ class KhataViewModel @JvmOverloads constructor(
       notes = notes,
       dueDate = dueDate
     )
+    if (res is InvoiceOperationResult.Success) triggerAutoSync()
+    return res
   }
 
   suspend fun recordInvoicePaymentAsync(
@@ -294,11 +325,15 @@ class KhataViewModel @JvmOverloads constructor(
     amount: Double,
     note: String = ""
   ): InvoiceOperationResult {
-    return repository.recordInvoicePayment(invoiceId, amount, note)
+    val res = repository.recordInvoicePayment(invoiceId, amount, note)
+    if (res is InvoiceOperationResult.Success) triggerAutoSync()
+    return res
   }
 
   suspend fun deleteInvoiceAsync(invoiceId: String): Boolean {
-    return repository.deleteInvoice(invoiceId)
+    val res = repository.deleteInvoice(invoiceId)
+    if (res) triggerAutoSync()
+    return res
   }
 
   // Synchronous convenience helpers for existing screens
@@ -345,6 +380,7 @@ class KhataViewModel @JvmOverloads constructor(
       address = address.trim(),
       upiId = upiId.trim()
     )
+    triggerAutoSync()
     return true
   }
 
@@ -409,14 +445,17 @@ class KhataViewModel @JvmOverloads constructor(
         if (user != null) {
           val previousActiveUser = repository.getActiveUser()
           if (previousActiveUser != user.uid) {
-            // Check if local unassigned data exists
-            val localCustomers = customers.value
-            val localTxs = transactions.value
-            if (localCustomers.isNotEmpty() || localTxs.isNotEmpty()) {
-              _showFirstLoginDialog.value = true
-            } else {
-              repository.setActiveUser(user.uid)
-              syncManager.restoreUserData(user.uid)
+            // Reassign any local guest/unassigned data created before login
+            syncManager.reassignLocalDataToUser(user.uid)
+            repository.setActiveUser(user.uid)
+            // Push any pending local data to Firestore under their UID
+            syncManager.syncPending(user.uid, businessProfile.value)
+            // Automatically load and restore previous history from Firestore under their UID
+            val res = syncManager.restoreUserData(user.uid)
+            res.onSuccess { summary ->
+              summary.profile?.let { prof ->
+                _businessProfile.value = prof
+              }
             }
           }
         } else {
@@ -429,9 +468,18 @@ class KhataViewModel @JvmOverloads constructor(
     viewModelScope.launch {
       networkMonitor.isOnline.collect { online ->
         val user = currentUser.value
-        if (online && user != null && syncStatus.value == SyncStatus.OFFLINE) {
+        if (online && user != null && (syncStatus.value == SyncStatus.OFFLINE || syncStatus.value == SyncStatus.SYNCED)) {
           syncManager.syncPending(user.uid, businessProfile.value)
         }
+      }
+    }
+  }
+
+  fun triggerAutoSync() {
+    val user = currentUser.value ?: return
+    viewModelScope.launch {
+      if (networkMonitor.isCurrentlyOnline()) {
+        syncManager.syncPending(user.uid, businessProfile.value)
       }
     }
   }
@@ -478,6 +526,12 @@ class KhataViewModel @JvmOverloads constructor(
         }
       )
     }
+  }
+
+  fun signInWithDemoAccount(displayName: String = "Shop Owner", onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    val account = authManager.signInWithDemoAccount(displayName = displayName)
+    repository.setActiveUser(account.uid)
+    onResult(true, null)
   }
 
   fun sendPhoneOtp(
@@ -599,7 +653,10 @@ class KhataViewModel @JvmOverloads constructor(
   ) {
     viewModelScope.launch {
       when (val res = repository.addProduct(name, sku, category, purchasePrice, sellingPrice, initialStock, lowStockThreshold, unit)) {
-        is ProductOperationResult.Success -> onResult(true, null)
+        is ProductOperationResult.Success -> {
+          triggerAutoSync()
+          onResult(true, null)
+        }
         is ProductOperationResult.Error -> onResult(false, res.message)
       }
     }
@@ -618,7 +675,10 @@ class KhataViewModel @JvmOverloads constructor(
   ) {
     viewModelScope.launch {
       when (val res = repository.updateProduct(id, name, sku, category, purchasePrice, sellingPrice, lowStockThreshold, unit)) {
-        is ProductOperationResult.Success -> onResult(true, null)
+        is ProductOperationResult.Success -> {
+          triggerAutoSync()
+          onResult(true, null)
+        }
         is ProductOperationResult.Error -> onResult(false, res.message)
       }
     }
@@ -627,12 +687,14 @@ class KhataViewModel @JvmOverloads constructor(
   fun toggleProductActive(productId: String, active: Boolean) {
     viewModelScope.launch {
       repository.toggleProductActive(productId, active)
+      triggerAutoSync()
     }
   }
 
   fun deleteProduct(productId: String, onResult: (Boolean) -> Unit = {}) {
     viewModelScope.launch {
       val success = repository.deleteProduct(productId)
+      if (success) triggerAutoSync()
       onResult(success)
     }
   }
@@ -645,7 +707,10 @@ class KhataViewModel @JvmOverloads constructor(
   ) {
     viewModelScope.launch {
       when (val res = repository.recordStockIn(productId, quantity, reason)) {
-        is StockOperationResult.Success -> onResult(true, null)
+        is StockOperationResult.Success -> {
+          triggerAutoSync()
+          onResult(true, null)
+        }
         is StockOperationResult.Error -> onResult(false, res.message)
       }
     }
@@ -659,7 +724,10 @@ class KhataViewModel @JvmOverloads constructor(
   ) {
     viewModelScope.launch {
       when (val res = repository.recordStockOut(productId, quantity, reason)) {
-        is StockOperationResult.Success -> onResult(true, null)
+        is StockOperationResult.Success -> {
+          triggerAutoSync()
+          onResult(true, null)
+        }
         is StockOperationResult.Error -> onResult(false, res.message)
       }
     }
@@ -673,7 +741,10 @@ class KhataViewModel @JvmOverloads constructor(
   ) {
     viewModelScope.launch {
       when (val res = repository.recordStockAdjustment(productId, newStockQuantity, reason)) {
-        is StockOperationResult.Success -> onResult(true, null)
+        is StockOperationResult.Success -> {
+          triggerAutoSync()
+          onResult(true, null)
+        }
         is StockOperationResult.Error -> onResult(false, res.message)
       }
     }
@@ -752,4 +823,52 @@ class KhataViewModel @JvmOverloads constructor(
   suspend fun recordPdfExport(exportType: String = "PDF") = repository.recordPdfExport(exportType)
 
   suspend fun canExportCsv(): Pair<Boolean, String?> = repository.canExportCsv()
+
+  // Payment & Subscription Integration Foundation
+  val paymentUiState: StateFlow<PaymentUiState> = paymentRepository.paymentUiState
+
+  fun startMonthlyPurchase(activity: Activity? = null, onResult: ((PaymentInitiationResult) -> Unit)? = null) {
+    viewModelScope.launch {
+      val res = paymentRepository.startMonthlyPurchase(activity)
+      onResult?.invoke(res)
+    }
+  }
+
+  fun startYearlyPurchase(activity: Activity? = null, onResult: ((PaymentInitiationResult) -> Unit)? = null) {
+    viewModelScope.launch {
+      val res = paymentRepository.startYearlyPurchase(activity)
+      onResult?.invoke(res)
+    }
+  }
+
+  fun checkPaymentStatus(orderId: String, onResult: ((PaymentCheckResult) -> Unit)? = null) {
+    viewModelScope.launch {
+      val res = paymentRepository.checkPaymentStatus(orderId)
+      onResult?.invoke(res)
+    }
+  }
+
+  fun restorePremium(onResult: ((RestorePremiumResult) -> Unit)? = null) {
+    viewModelScope.launch {
+      val res = paymentRepository.restorePremium()
+      onResult?.invoke(res)
+    }
+  }
+
+  fun handlePaymentResult(
+    orderId: String,
+    gatewayPaymentId: String?,
+    gatewayStatus: String,
+    failureReason: String? = null,
+    onResult: ((PaymentVerificationResult) -> Unit)? = null
+  ) {
+    viewModelScope.launch {
+      val res = paymentRepository.handlePaymentResult(orderId, gatewayPaymentId, gatewayStatus, failureReason)
+      onResult?.invoke(res)
+    }
+  }
+
+  fun resetPaymentUiState() {
+    paymentRepository.resetUiState()
+  }
 }

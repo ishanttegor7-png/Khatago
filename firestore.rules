@@ -47,7 +47,15 @@ service cloud.firestore {
       }
 
       // Subscription / Entitlements subcollection: strictly isolated to the authenticated business owner
+      // Authoritative read by owner; client cannot self-assign PREMIUM plans directly
       match /subscription/{subscriptionId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId) &&
+                     (!('planType' in request.resource.data) || request.resource.data.planType == 'FREE');
+      }
+
+      // Payment orders / audit records: strictly isolated to the authenticated business owner
+      match /payments/{paymentId} {
         allow read, write: if isOwner(userId);
       }
     }

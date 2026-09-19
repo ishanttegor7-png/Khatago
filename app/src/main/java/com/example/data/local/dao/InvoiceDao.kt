@@ -30,6 +30,9 @@ interface InvoiceDao {
   @Query("SELECT * FROM invoices WHERE isDeleted = 0 ORDER BY createdTimestamp DESC")
   fun getAllInvoices(): Flow<List<InvoiceEntity>>
 
+  @Query("SELECT * FROM invoices WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 ORDER BY createdTimestamp DESC")
+  fun getInvoicesForUser(userId: String): Flow<List<InvoiceEntity>>
+
   @Query("SELECT * FROM invoice_items ORDER BY itemOrder ASC")
   fun getAllInvoiceItems(): Flow<List<InvoiceItemEntity>>
 
@@ -48,11 +51,20 @@ interface InvoiceDao {
   @Query("SELECT * FROM invoices WHERE customerId = :customerId AND isDeleted = 0 ORDER BY createdTimestamp DESC")
   fun getInvoicesForCustomer(customerId: String): Flow<List<InvoiceEntity>>
 
+  @Query("SELECT * FROM invoices WHERE customerId = :customerId AND ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 ORDER BY createdTimestamp DESC")
+  fun getInvoicesForCustomerAndUser(customerId: String, userId: String): Flow<List<InvoiceEntity>>
+
   @Query("SELECT invoiceNumber FROM invoices WHERE isDeleted = 0")
   suspend fun getAllInvoiceNumbers(): List<String>
 
+  @Query("SELECT invoiceNumber FROM invoices WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0")
+  suspend fun getAllInvoiceNumbersForUser(userId: String): List<String>
+
   @Query("SELECT * FROM invoices WHERE syncStatus != 'SYNCED'")
   suspend fun getPendingInvoices(): List<InvoiceEntity>
+
+  @Query("SELECT * FROM invoices WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND syncStatus != 'SYNCED'")
+  suspend fun getPendingInvoicesForUser(userId: String): List<InvoiceEntity>
 
   @Query("SELECT * FROM invoices WHERE isDeleted = 0")
   suspend fun getAllInvoicesDirect(): List<InvoiceEntity>
@@ -75,6 +87,12 @@ interface InvoiceDao {
   @Query("SELECT COUNT(*) FROM invoices WHERE isDeleted = 0 AND createdTimestamp >= :sinceTimestamp")
   suspend fun getInvoiceCountSince(sinceTimestamp: Long): Int
 
+  @Query("SELECT COUNT(*) FROM invoices WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 AND createdTimestamp >= :sinceTimestamp")
+  suspend fun getInvoiceCountSinceForUser(sinceTimestamp: Long, userId: String): Int
+
   @Query("SELECT COUNT(*) FROM invoices WHERE isDeleted = 0 AND createdTimestamp >= :sinceTimestamp")
   fun getInvoiceCountSinceFlow(sinceTimestamp: Long): Flow<Int>
+
+  @Query("SELECT COUNT(*) FROM invoices WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 AND createdTimestamp >= :sinceTimestamp")
+  fun getInvoiceCountSinceFlowForUser(sinceTimestamp: Long, userId: String): Flow<Int>
 }

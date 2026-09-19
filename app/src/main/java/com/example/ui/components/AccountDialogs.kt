@@ -66,7 +66,8 @@ fun SignInDialog(
   onSignInGoogle: (onResult: (Boolean, String?) -> Unit) -> Unit,
   onSendPhoneOtp: (phoneNumber: String, onCodeSent: (String) -> Unit, onError: (String) -> Unit) -> Unit,
   onVerifyPhoneOtp: (verificationId: String, otp: String, onResult: (Boolean, String?) -> Unit) -> Unit,
-  onResendPhoneOtp: ((phoneNumber: String, onCodeSent: (String) -> Unit, onError: (String) -> Unit) -> Unit)? = null
+  onResendPhoneOtp: ((phoneNumber: String, onCodeSent: (String) -> Unit, onError: (String) -> Unit) -> Unit)? = null,
+  onSignInDemo: (() -> Unit)? = null
 ) {
   var selectedTab by remember { mutableIntStateOf(0) }
   var phoneNumber by remember { mutableStateOf("") }
@@ -204,6 +205,29 @@ fun SignInDialog(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
+              if (verificationId?.startsWith("local_sandbox_") == true) {
+                Card(
+                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+                  shape = RoundedCornerShape(8.dp),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text(
+                      text = "Test Code: 123456",
+                      style = MaterialTheme.typography.labelMedium,
+                      fontWeight = FontWeight.Bold,
+                      color = MaterialTheme.colorScheme.onPrimaryContainer,
+                      modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { otpCode = "123456" }) {
+                      Text("Auto-fill", fontSize = 11.sp)
+                    }
+                  }
+                }
+              }
               OutlinedTextField(
                 value = otpCode,
                 onValueChange = { if (it.length <= 6) otpCode = it.filter { char -> char.isDigit() } },
@@ -342,6 +366,31 @@ fun SignInDialog(
                 Text(
                   text = "Continue with Google",
                   color = MaterialTheme.colorScheme.onSurface,
+                  fontWeight = FontWeight.SemiBold
+                )
+              }
+            }
+
+            if (onSignInDemo != null) {
+              OutlinedButton(
+                onClick = {
+                  onSignInDemo()
+                  onDismiss()
+                },
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(48.dp)
+                  .testTag("btn_sign_in_demo")
+              ) {
+                Icon(
+                  imageVector = Icons.Default.AccountCircle,
+                  contentDescription = null,
+                  modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = "Continue with Shop Profile",
                   fontWeight = FontWeight.SemiBold
                 )
               }

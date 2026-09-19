@@ -106,6 +106,7 @@ fun SettingsScreen(
   onThemeChange: (String) -> Unit,
   onToggleNotifications: () -> Unit,
   onSignInGoogle: (onResult: (Boolean, String?) -> Unit) -> Unit,
+  onSignInDemo: () -> Unit = {},
   onSendPhoneOtp: (phoneNumber: String, onCodeSent: (String) -> Unit, onError: (String) -> Unit) -> Unit,
   onVerifyPhoneOtp: (verificationId: String, otp: String, onResult: (Boolean, String?) -> Unit) -> Unit,
   onResendPhoneOtp: ((phoneNumber: String, onCodeSent: (String) -> Unit, onError: (String) -> Unit) -> Unit)? = null,
@@ -146,6 +147,7 @@ fun SettingsScreen(
     SignInDialog(
       onDismiss = { showSignInDialog = false },
       onSignInGoogle = onSignInGoogle,
+      onSignInDemo = onSignInDemo,
       onSendPhoneOtp = onSendPhoneOtp,
       onVerifyPhoneOtp = onVerifyPhoneOtp,
       onResendPhoneOtp = onResendPhoneOtp

@@ -9,6 +9,8 @@
 
     <!--
       Optional manual Firebase project configuration if google-services.json is not placed in app/
+      To connect your real Firebase project, paste your Web API Key and Application ID here,
+      or place your downloaded google-services.json into app/
     -->
     <string name="firebase_project_id" translatable="false"></string>
     <string name="firebase_application_id" translatable="false"></string>

@@ -13,6 +13,9 @@ interface StockMovementDao {
   @Query("SELECT * FROM stock_movements WHERE isDeleted = 0 ORDER BY timestamp DESC")
   fun getAllMovements(): Flow<List<StockMovementEntity>>
 
+  @Query("SELECT * FROM stock_movements WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 ORDER BY timestamp DESC")
+  fun getMovementsForUser(userId: String): Flow<List<StockMovementEntity>>
+
   @Query("SELECT * FROM stock_movements WHERE productId = :productId AND isDeleted = 0 ORDER BY timestamp DESC")
   fun getMovementsForProduct(productId: String): Flow<List<StockMovementEntity>>
 
@@ -37,10 +40,13 @@ interface StockMovementDao {
   @Query("SELECT * FROM stock_movements WHERE syncStatus IN ('PENDING', 'PENDING_DELETE')")
   suspend fun getPendingMovements(): List<StockMovementEntity>
 
+  @Query("SELECT * FROM stock_movements WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND syncStatus IN ('PENDING', 'PENDING_DELETE')")
+  suspend fun getPendingMovementsForUser(userId: String): List<StockMovementEntity>
+
   @Query("UPDATE stock_movements SET syncStatus = :status WHERE id = :id")
   suspend fun updateSyncStatus(id: String, status: String)
 
-  @Query("UPDATE stock_movements SET userId = :newUserId, syncStatus = 'PENDING' WHERE userId = '' OR userId != :newUserId")
+  @Query("UPDATE stock_movements SET userId = :newUserId, syncStatus = 'PENDING' WHERE userId = '' OR userId IS NULL")
   suspend fun reassignMovementsToUser(newUserId: String)
 
   @Query("DELETE FROM stock_movements")

@@ -8,6 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.local.dao.CustomerDao
 import com.example.data.local.dao.InvoiceDao
+import com.example.data.local.dao.PaymentDao
 import com.example.data.local.dao.PdfExportLogDao
 import com.example.data.local.dao.ProductDao
 import com.example.data.local.dao.StockMovementDao
@@ -16,6 +17,7 @@ import com.example.data.local.dao.UserEntitlementDao
 import com.example.data.local.entity.CustomerEntity
 import com.example.data.local.entity.InvoiceEntity
 import com.example.data.local.entity.InvoiceItemEntity
+import com.example.data.local.entity.PaymentRecordEntity
 import com.example.data.local.entity.PdfExportLogEntity
 import com.example.data.local.entity.ProductEntity
 import com.example.data.local.entity.StockMovementEntity
@@ -31,9 +33,10 @@ import com.example.data.local.entity.UserEntitlementEntity
     ProductEntity::class,
     StockMovementEntity::class,
     UserEntitlementEntity::class,
-    PdfExportLogEntity::class
+    PdfExportLogEntity::class,
+    PaymentRecordEntity::class
   ],
-  version = 5,
+  version = 6,
   exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -45,6 +48,7 @@ abstract class AppDatabase : RoomDatabase() {
   abstract fun stockMovementDao(): StockMovementDao
   abstract fun userEntitlementDao(): UserEntitlementDao
   abstract fun pdfExportLogDao(): PdfExportLogDao
+  abstract fun paymentDao(): PaymentDao
 
   companion object {
     @Volatile
@@ -154,6 +158,35 @@ abstract class AppDatabase : RoomDatabase() {
       }
     }
 
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+      override fun migrate(db: SupportSQLiteDatabase) {
+        // Create payment_records table
+        db.execSQL(
+          """
+          CREATE TABLE IF NOT EXISTS payment_records (
+            paymentId TEXT NOT NULL PRIMARY KEY,
+            orderId TEXT NOT NULL,
+            firebaseUid TEXT NOT NULL,
+            planId TEXT NOT NULL,
+            amount REAL NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'INR',
+            status TEXT NOT NULL DEFAULT 'STARTED',
+            gateway TEXT NOT NULL DEFAULT 'CASHFREE',
+            createdAt INTEGER NOT NULL,
+            verifiedAt INTEGER,
+            premiumStartAt INTEGER,
+            premiumExpiryAt INTEGER,
+            gatewayPaymentId TEXT,
+            failureReason TEXT
+          )
+          """.trimIndent()
+        )
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_payment_records_orderId ON payment_records(orderId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_payment_records_firebaseUid ON payment_records(firebaseUid)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_payment_records_createdAt ON payment_records(createdAt)")
+      }
+    }
+
     fun getDatabase(context: Context): AppDatabase {
       return INSTANCE ?: synchronized(this) {
         val instance = Room.databaseBuilder(
@@ -161,7 +194,7 @@ abstract class AppDatabase : RoomDatabase() {
           AppDatabase::class.java,
           "khatago_database"
         )
-          .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+          .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
           .fallbackToDestructiveMigration(false)
           .build()
         INSTANCE = instance

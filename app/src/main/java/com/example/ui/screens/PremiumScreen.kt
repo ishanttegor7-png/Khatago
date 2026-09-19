@@ -85,6 +85,9 @@ private val GoldBorder = Color(0xFFFDE68A)
 fun PremiumScreen(
   planMetrics: PlanUsageMetrics,
   onBackClick: () -> Unit,
+  onChooseMonthly: () -> Unit = {},
+  onChooseYearly: () -> Unit = {},
+  onRestoreClick: () -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   val context = LocalContext.current
@@ -171,6 +174,19 @@ fun PremiumScreen(
             Icon(
               imageVector = Icons.AutoMirrored.Filled.ArrowBack,
               contentDescription = "Back"
+            )
+          }
+        },
+        actions = {
+          TextButton(
+            onClick = onRestoreClick,
+            modifier = Modifier.testTag("btn_restore_premium")
+          ) {
+            Text(
+              text = "Restore",
+              fontWeight = FontWeight.Bold,
+              color = GoldDark,
+              fontSize = 13.sp
             )
           }
         },
@@ -310,8 +326,7 @@ fun PremiumScreen(
           isSelected = planMetrics.isPremiumActive && planMetrics.planType == PlanType.PREMIUM_MONTHLY,
           buttonText = "Choose Monthly",
           onChoose = {
-            selectedPlanName = "Premium Monthly (₹99/month)"
-            showSoonDialog = true
+            onChooseMonthly()
           },
           modifier = Modifier.weight(1f)
         )
@@ -326,8 +341,7 @@ fun PremiumScreen(
           isSelected = planMetrics.isPremiumActive && planMetrics.planType == PlanType.PREMIUM_YEARLY,
           buttonText = "Choose Yearly",
           onChoose = {
-            selectedPlanName = "Premium Yearly (₹799/year)"
-            showSoonDialog = true
+            onChooseYearly()
           },
           modifier = Modifier.weight(1f)
         )

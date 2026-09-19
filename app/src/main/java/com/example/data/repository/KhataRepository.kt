@@ -31,8 +31,13 @@ import com.example.model.SubscriptionEntitlement
 import com.example.model.Transaction
 import com.example.model.TransactionType
 import com.example.util.InvoiceCalculator
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
@@ -84,6 +89,16 @@ class KhataRepository(
   private val userEntitlementDao: UserEntitlementDao? = null,
   private val pdfExportLogDao: PdfExportLogDao? = null
 ) {
+
+  private val _activeUserId = MutableStateFlow("")
+  val activeUserIdFlow: StateFlow<String> = _activeUserId.asStateFlow()
+  val activeUserId: String get() = _activeUserId.value
+
+  fun setActiveUser(userId: String) {
+    _activeUserId.value = userId
+  }
+
+  fun getActiveUser(): String = _activeUserId.value
 
   private val avatarColors = listOf(
     0xFF0F766E, 0xFF8B5CF6, 0xFFDC2626, 0xFFD97706,
@@ -156,96 +171,108 @@ class KhataRepository(
     entity?.toModel() ?: SubscriptionEntitlement(userId = activeUserId)
   }
 
-  val planUsageMetricsFlow: Flow<PlanUsageMetrics> = combine(
-    customerDao.getCustomerCountFlow(),
-    productDao.getProductCountFlow(),
-    invoiceDao.getInvoiceCountSinceFlow(MonthDateUtils.getStartOfCurrentMonthMillis()),
-    transactionDao.getTransactionCountSinceFlow(MonthDateUtils.getStartOfCurrentMonthMillis()),
+  @OptIn(ExperimentalCoroutinesApi::class)
+  val planUsageMetricsFlow: Flow<PlanUsageMetrics> = _activeUserId.flatMapLatest { uid ->
     combine(
-      pdfExportLogDao?.getCountSinceFlow(MonthDateUtils.getStartOfCurrentMonthMillis()) ?: flowOf(0),
-      userEntitlementDao?.getLatestEntitlement() ?: flowOf(null)
-    ) { pdf, ent -> Pair(pdf, ent) }
-  ) { custCount, prodCount, invCount, txCount, extraPair ->
-    val (pdfCount, entEntity) = extraPair
-    val entitlement = entEntity?.toModel() ?: SubscriptionEntitlement(userId = activeUserId)
-    val effectivePlan = entitlement.getEffectivePlan()
-    val limits = PlanLimits.forPlan(effectivePlan)
-    PlanUsageMetrics(
-      customerCount = custCount,
-      maxCustomers = limits.maxCustomers,
-      productCount = prodCount,
-      maxProducts = limits.maxProducts,
-      monthlyInvoiceCount = invCount,
-      maxMonthlyInvoices = limits.maxInvoicesPerMonth,
-      monthlyTransactionCount = txCount,
-      maxMonthlyTransactions = limits.maxKhataTransactionsPerMonth,
-      monthlyPdfExportCount = pdfCount,
-      maxMonthlyPdfExports = limits.maxPdfExportsPerMonth,
-      isCsvExportAllowed = limits.isCsvExportAllowed,
-      isAdvancedReportsAllowed = limits.isAdvancedReportsAllowed,
-      planType = effectivePlan,
-      isPremiumActive = entitlement.isCurrentlyActive() && effectivePlan != PlanType.FREE,
-      expiryMillis = entitlement.expiryMillis
-    )
+      customerDao.getCustomerCountFlowForUser(uid),
+      productDao.getProductCountFlowForUser(uid),
+      invoiceDao.getInvoiceCountSinceFlowForUser(MonthDateUtils.getStartOfCurrentMonthMillis(), uid),
+      transactionDao.getTransactionCountSinceFlowForUser(MonthDateUtils.getStartOfCurrentMonthMillis(), uid),
+      combine(
+        pdfExportLogDao?.getCountSinceFlow(MonthDateUtils.getStartOfCurrentMonthMillis()) ?: flowOf(0),
+        userEntitlementDao?.getEntitlementForUser(uid) ?: flowOf(null)
+      ) { pdf, ent -> Pair(pdf, ent) }
+    ) { custCount, prodCount, invCount, txCount, extraPair ->
+      val (pdfCount, entEntity) = extraPair
+      val entitlement = entEntity?.toModel() ?: SubscriptionEntitlement(userId = uid)
+      val effectivePlan = entitlement.getEffectivePlan()
+      val limits = PlanLimits.forPlan(effectivePlan)
+      PlanUsageMetrics(
+        customerCount = custCount,
+        maxCustomers = limits.maxCustomers,
+        productCount = prodCount,
+        maxProducts = limits.maxProducts,
+        monthlyInvoiceCount = invCount,
+        maxMonthlyInvoices = limits.maxInvoicesPerMonth,
+        monthlyTransactionCount = txCount,
+        maxMonthlyTransactions = limits.maxKhataTransactionsPerMonth,
+        monthlyPdfExportCount = pdfCount,
+        maxMonthlyPdfExports = limits.maxPdfExportsPerMonth,
+        isCsvExportAllowed = limits.isCsvExportAllowed,
+        isAdvancedReportsAllowed = limits.isAdvancedReportsAllowed,
+        planType = effectivePlan,
+        isPremiumActive = entitlement.isCurrentlyActive() && effectivePlan != PlanType.FREE,
+        expiryMillis = entitlement.expiryMillis
+      )
+    }
   }
 
   /**
    * Observe all customers with their real-time dynamically computed balance.
    * Outstanding = total CREDIT - total PAYMENT
    */
-  val customersFlow: Flow<List<Customer>> = combine(
-    customerDao.getAllCustomers(),
-    transactionDao.getAllTransactions()
-  ) { customerEntities, transactionEntities ->
-    val txByCustomer = transactionEntities.groupBy { it.customerId }
+  @OptIn(ExperimentalCoroutinesApi::class)
+  val customersFlow: Flow<List<Customer>> = _activeUserId.flatMapLatest { uid ->
+    combine(
+      customerDao.getCustomersForUser(uid),
+      transactionDao.getTransactionsForUser(uid)
+    ) { customerEntities, transactionEntities ->
+      val txByCustomer = transactionEntities.groupBy { it.customerId }
 
-    customerEntities.map { entity ->
-      val customerTxs = txByCustomer[entity.id].orEmpty()
-      val totalCredit = customerTxs.filter { it.type == "CREDIT" }.sumOf { it.amount }
-      val totalPayment = customerTxs.filter { it.type == "PAYMENT" }.sumOf { it.amount }
-      val outstandingBalance = totalCredit - totalPayment
+      customerEntities.map { entity ->
+        val customerTxs = txByCustomer[entity.id].orEmpty()
+        val totalCredit = customerTxs.filter { it.type == "CREDIT" }.sumOf { it.amount }
+        val totalPayment = customerTxs.filter { it.type == "PAYMENT" }.sumOf { it.amount }
+        val outstandingBalance = totalCredit - totalPayment
 
-      val mostRecentTx = customerTxs.maxByOrNull { it.timestamp }
-      val lastUpdatedStr = when {
-        mostRecentTx != null -> formatFriendlyDate(mostRecentTx.timestamp)
-        else -> formatFriendlyDate(entity.updatedDate)
+        val mostRecentTx = customerTxs.maxByOrNull { it.timestamp }
+        val lastUpdatedStr = when {
+          mostRecentTx != null -> formatFriendlyDate(mostRecentTx.timestamp)
+          else -> formatFriendlyDate(entity.updatedDate)
+        }
+
+        Customer(
+          id = entity.id,
+          name = entity.name,
+          phone = entity.phone,
+          address = entity.address,
+          balance = outstandingBalance,
+          totalCredit = totalCredit,
+          totalPayment = totalPayment,
+          transactionCount = customerTxs.size,
+          createdDate = entity.createdDate,
+          updatedDate = entity.updatedDate,
+          lastUpdated = lastUpdatedStr,
+          avatarColorHex = entity.avatarColorHex
+        )
       }
-
-      Customer(
-        id = entity.id,
-        name = entity.name,
-        phone = entity.phone,
-        address = entity.address,
-        balance = outstandingBalance,
-        totalCredit = totalCredit,
-        totalPayment = totalPayment,
-        transactionCount = customerTxs.size,
-        createdDate = entity.createdDate,
-        updatedDate = entity.updatedDate,
-        lastUpdated = lastUpdatedStr,
-        avatarColorHex = entity.avatarColorHex
-      )
     }
   }
 
   /**
    * Observe all transactions across all customers, sorted newest first.
    */
-  val transactionsFlow: Flow<List<Transaction>> = transactionDao.getAllTransactions().map { entities ->
-    entities.map { it.toModel() }
+  @OptIn(ExperimentalCoroutinesApi::class)
+  val transactionsFlow: Flow<List<Transaction>> = _activeUserId.flatMapLatest { uid ->
+    transactionDao.getTransactionsForUser(uid).map { entities ->
+      entities.map { it.toModel() }
+    }
   }
 
   /**
    * Observe all invoices in real-time, newest first.
    */
-  val invoicesFlow: Flow<List<Invoice>> = combine(
-    invoiceDao.getAllInvoices(),
-    invoiceDao.getAllInvoiceItems()
-  ) { invoiceEntities, allItemEntities ->
-    val itemsByInvoiceId = allItemEntities.groupBy { it.invoiceId }
-    invoiceEntities.map { invEntity ->
-      val items = itemsByInvoiceId[invEntity.id].orEmpty().map { it.toModel() }
-      invEntity.toModel(items)
+  @OptIn(ExperimentalCoroutinesApi::class)
+  val invoicesFlow: Flow<List<Invoice>> = _activeUserId.flatMapLatest { uid ->
+    combine(
+      invoiceDao.getInvoicesForUser(uid),
+      invoiceDao.getAllInvoiceItems()
+    ) { invoiceEntities, allItemEntities ->
+      val itemsByInvoiceId = allItemEntities.groupBy { it.invoiceId }
+      invoiceEntities.map { invEntity ->
+        val items = itemsByInvoiceId[invEntity.id].orEmpty().map { it.toModel() }
+        invEntity.toModel(items)
+      }
     }
   }
 
@@ -253,7 +280,7 @@ class KhataRepository(
    * Observe transactions for a single customer with running balance calculated from history.
    */
   fun getTransactionsForCustomer(customerId: String): Flow<List<Transaction>> {
-    return transactionDao.getTransactionsForCustomer(customerId).map { entities ->
+    return transactionDao.getTransactionsForCustomerAndUser(customerId, activeUserId).map { entities ->
       val sortedOldestFirst = entities.sortedBy { it.timestamp }
       var running = 0.0
       val modelsWithRunning = sortedOldestFirst.map { entity ->
@@ -329,7 +356,7 @@ class KhataRepository(
    * Continues seamlessly after app restart.
    */
   suspend fun getNextInvoiceNumber(): String {
-    val numbers = invoiceDao.getAllInvoiceNumbers()
+    val numbers = invoiceDao.getAllInvoiceNumbersForUser(activeUserId)
     val regex = Regex("""^INV-(\d+)$""", RegexOption.IGNORE_CASE)
     var maxIndex = 0
     for (num in numbers) {
@@ -344,32 +371,36 @@ class KhataRepository(
     return String.format(Locale.US, "INV-%04d", maxIndex + 1)
   }
 
-  private var activeUserId: String = ""
-
-  fun setActiveUser(userId: String) {
-    activeUserId = userId
-  }
-
-  fun getActiveUser(): String = activeUserId
-
   // ==========================================
   // PRODUCTS & STOCK MANAGEMENT (PHASE 5 PART 1)
   // ==========================================
 
-  val productsFlow: Flow<List<Product>> = productDao.getAllProducts().map { entities ->
-    entities.map { it.toModel() }
+  @OptIn(ExperimentalCoroutinesApi::class)
+  val productsFlow: Flow<List<Product>> = _activeUserId.flatMapLatest { uid ->
+    productDao.getProductsForUser(uid).map { entities ->
+      entities.map { it.toModel() }
+    }
   }
 
-  val activeProductsFlow: Flow<List<Product>> = productDao.getActiveProducts().map { entities ->
-    entities.map { it.toModel() }
+  @OptIn(ExperimentalCoroutinesApi::class)
+  val activeProductsFlow: Flow<List<Product>> = _activeUserId.flatMapLatest { uid ->
+    productDao.getActiveProductsForUser(uid).map { entities ->
+      entities.map { it.toModel() }
+    }
   }
 
-  val lowStockProductsFlow: Flow<List<Product>> = productDao.getLowStockProducts().map { entities ->
-    entities.map { it.toModel() }
+  @OptIn(ExperimentalCoroutinesApi::class)
+  val lowStockProductsFlow: Flow<List<Product>> = _activeUserId.flatMapLatest { uid ->
+    productDao.getLowStockProductsForUser(uid).map { entities ->
+      entities.map { it.toModel() }
+    }
   }
 
-  val stockMovementsFlow: Flow<List<StockMovement>> = stockMovementDao.getAllMovements().map { entities ->
-    entities.map { it.toModel() }
+  @OptIn(ExperimentalCoroutinesApi::class)
+  val stockMovementsFlow: Flow<List<StockMovement>> = _activeUserId.flatMapLatest { uid ->
+    stockMovementDao.getMovementsForUser(uid).map { entities ->
+      entities.map { it.toModel() }
+    }
   }
 
   fun getProductById(productId: String): Flow<Product?> {
@@ -393,7 +424,7 @@ class KhataRepository(
     unit: String = "piece"
   ): ProductOperationResult {
     val limits = getPlanLimits()
-    val currentProductCount = productDao.getProductCountDirect()
+    val currentProductCount = productDao.getProductCountDirectForUser(activeUserId)
     if (currentProductCount >= limits.maxProducts) {
       return ProductOperationResult.Error(
         "Free plan limit reached ($currentProductCount/${limits.maxProducts} products). Upgrade to KhataGo Premium to add more products."
@@ -592,7 +623,7 @@ class KhataRepository(
    */
   suspend fun addCustomer(name: String, phone: String, address: String = ""): AddCustomerResult {
     val limits = getPlanLimits()
-    val currentCustomerCount = customerDao.getCustomerCountDirect()
+    val currentCustomerCount = customerDao.getCustomerCountDirectForUser(activeUserId)
     if (currentCustomerCount >= limits.maxCustomers) {
       return AddCustomerResult.Error(
         "Free plan limit reached ($currentCustomerCount/${limits.maxCustomers} customers). Upgrade to KhataGo Premium to add more customers."
@@ -608,13 +639,13 @@ class KhataRepository(
     }
 
     if (trimmedPhone.isNotBlank()) {
-      val existingByPhone = customerDao.findCustomerByPhone(trimmedPhone)
+      val existingByPhone = customerDao.findCustomerByPhoneForUser(trimmedPhone, activeUserId)
       if (existingByPhone != null) {
         return AddCustomerResult.Error("Customer already exists with this phone: ${existingByPhone.name}")
       }
     }
 
-    val existingByName = customerDao.findCustomerByName(trimmedName)
+    val existingByName = customerDao.findCustomerByNameForUser(trimmedName, activeUserId)
     if (existingByName != null) {
       return AddCustomerResult.Error("A customer named '$trimmedName' already exists")
     }
@@ -680,7 +711,7 @@ class KhataRepository(
   ): TransactionResult {
     val limits = getPlanLimits()
     val startOfMonth = MonthDateUtils.getStartOfCurrentMonthMillis()
-    val monthlyTxCount = transactionDao.getTransactionCountSince(startOfMonth)
+    val monthlyTxCount = transactionDao.getTransactionCountSinceForUser(startOfMonth, activeUserId)
     if (monthlyTxCount >= limits.maxKhataTransactionsPerMonth) {
       return TransactionResult.Error(
         "Free plan limit reached ($monthlyTxCount/${limits.maxKhataTransactionsPerMonth} transactions this month). Upgrade to KhataGo Premium to record more entries."
@@ -754,7 +785,7 @@ class KhataRepository(
   ): InvoiceOperationResult {
     val limits = getPlanLimits()
     val startOfMonth = MonthDateUtils.getStartOfCurrentMonthMillis()
-    val monthlyInvoiceCount = invoiceDao.getInvoiceCountSince(startOfMonth)
+    val monthlyInvoiceCount = invoiceDao.getInvoiceCountSinceForUser(startOfMonth, activeUserId)
     if (monthlyInvoiceCount >= limits.maxInvoicesPerMonth) {
       return InvoiceOperationResult.Error(
         "Free plan limit reached ($monthlyInvoiceCount/${limits.maxInvoicesPerMonth} invoices this month). Upgrade to KhataGo Premium to create more invoices."

@@ -14,14 +14,23 @@ interface TransactionDao {
   @Query("SELECT * FROM transactions WHERE isDeleted = 0 ORDER BY timestamp DESC")
   fun getAllTransactions(): Flow<List<TransactionEntity>>
 
+  @Query("SELECT * FROM transactions WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 ORDER BY timestamp DESC")
+  fun getTransactionsForUser(userId: String): Flow<List<TransactionEntity>>
+
   @Query("SELECT * FROM transactions WHERE customerId = :customerId AND isDeleted = 0 ORDER BY timestamp DESC")
   fun getTransactionsForCustomer(customerId: String): Flow<List<TransactionEntity>>
+
+  @Query("SELECT * FROM transactions WHERE customerId = :customerId AND ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 ORDER BY timestamp DESC")
+  fun getTransactionsForCustomerAndUser(customerId: String, userId: String): Flow<List<TransactionEntity>>
 
   @Query("SELECT * FROM transactions WHERE customerId = :customerId AND isDeleted = 0 ORDER BY timestamp ASC")
   suspend fun getTransactionsForCustomerAscending(customerId: String): List<TransactionEntity>
 
   @Query("SELECT * FROM transactions WHERE syncStatus != 'SYNCED'")
   suspend fun getPendingTransactions(): List<TransactionEntity>
+
+  @Query("SELECT * FROM transactions WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND syncStatus != 'SYNCED'")
+  suspend fun getPendingTransactionsForUser(userId: String): List<TransactionEntity>
 
   @Query("SELECT * FROM transactions WHERE isDeleted = 0")
   suspend fun getAllTransactionsDirect(): List<TransactionEntity>
@@ -65,6 +74,12 @@ interface TransactionDao {
   @Query("SELECT COUNT(*) FROM transactions WHERE isDeleted = 0 AND timestamp >= :sinceTimestamp")
   suspend fun getTransactionCountSince(sinceTimestamp: Long): Int
 
+  @Query("SELECT COUNT(*) FROM transactions WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 AND timestamp >= :sinceTimestamp")
+  suspend fun getTransactionCountSinceForUser(sinceTimestamp: Long, userId: String): Int
+
   @Query("SELECT COUNT(*) FROM transactions WHERE isDeleted = 0 AND timestamp >= :sinceTimestamp")
   fun getTransactionCountSinceFlow(sinceTimestamp: Long): Flow<Int>
+
+  @Query("SELECT COUNT(*) FROM transactions WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 AND timestamp >= :sinceTimestamp")
+  fun getTransactionCountSinceFlowForUser(sinceTimestamp: Long, userId: String): Flow<Int>
 }

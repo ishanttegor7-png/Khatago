@@ -42,4 +42,7 @@
     <string name="error_business_name_required">Please enter business name</string>
     <string name="error_item_required">Please enter product or service name</string>
     <string name="error_price_required">Please enter valid price</string>
+
+    <!-- Firebase Auth & Cloud Sync Strings -->
+    <string name="firebase_api_key_invalid_msg">Firebase API Key is invalid or restricted. Please update your google-services.json or firebase_config.xml with your real Firebase Web API Key from Firebase Console.</string>
 </resources>

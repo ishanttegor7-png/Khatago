@@ -15,6 +15,9 @@ interface CustomerDao {
   @Query("SELECT * FROM customers WHERE isArchived = 0 AND isDeleted = 0 ORDER BY updatedDate DESC")
   fun getAllCustomers(): Flow<List<CustomerEntity>>
 
+  @Query("SELECT * FROM customers WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isArchived = 0 AND isDeleted = 0 ORDER BY updatedDate DESC")
+  fun getCustomersForUser(userId: String): Flow<List<CustomerEntity>>
+
   @Query("SELECT * FROM customers WHERE id = :id AND isDeleted = 0 LIMIT 1")
   fun getCustomerById(id: String): Flow<CustomerEntity?>
 
@@ -24,11 +27,20 @@ interface CustomerDao {
   @Query("SELECT * FROM customers WHERE phone = :phone AND isArchived = 0 AND isDeleted = 0 LIMIT 1")
   suspend fun findCustomerByPhone(phone: String): CustomerEntity?
 
+  @Query("SELECT * FROM customers WHERE phone = :phone AND ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isArchived = 0 AND isDeleted = 0 LIMIT 1")
+  suspend fun findCustomerByPhoneForUser(phone: String, userId: String): CustomerEntity?
+
   @Query("SELECT * FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND isArchived = 0 AND isDeleted = 0 LIMIT 1")
   suspend fun findCustomerByName(name: String): CustomerEntity?
 
+  @Query("SELECT * FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isArchived = 0 AND isDeleted = 0 LIMIT 1")
+  suspend fun findCustomerByNameForUser(name: String, userId: String): CustomerEntity?
+
   @Query("SELECT * FROM customers WHERE syncStatus != 'SYNCED'")
   suspend fun getPendingCustomers(): List<CustomerEntity>
+
+  @Query("SELECT * FROM customers WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND syncStatus != 'SYNCED'")
+  suspend fun getPendingCustomersForUser(userId: String): List<CustomerEntity>
 
   @Query("SELECT * FROM customers WHERE isDeleted = 0")
   suspend fun getAllCustomersDirect(): List<CustomerEntity>
@@ -60,6 +72,12 @@ interface CustomerDao {
   @Query("SELECT COUNT(*) FROM customers WHERE isDeleted = 0")
   suspend fun getCustomerCountDirect(): Int
 
+  @Query("SELECT COUNT(*) FROM customers WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0")
+  suspend fun getCustomerCountDirectForUser(userId: String): Int
+
   @Query("SELECT COUNT(*) FROM customers WHERE isDeleted = 0")
   fun getCustomerCountFlow(): Flow<Int>
+
+  @Query("SELECT COUNT(*) FROM customers WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0")
+  fun getCustomerCountFlowForUser(userId: String): Flow<Int>
 }

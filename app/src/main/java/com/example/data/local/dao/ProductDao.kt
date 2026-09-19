@@ -14,11 +14,20 @@ interface ProductDao {
   @Query("SELECT * FROM products WHERE isDeleted = 0 ORDER BY updatedAt DESC")
   fun getAllProducts(): Flow<List<ProductEntity>>
 
+  @Query("SELECT * FROM products WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 ORDER BY updatedAt DESC")
+  fun getProductsForUser(userId: String): Flow<List<ProductEntity>>
+
   @Query("SELECT * FROM products WHERE isDeleted = 0 AND isActive = 1 ORDER BY name ASC")
   fun getActiveProducts(): Flow<List<ProductEntity>>
 
+  @Query("SELECT * FROM products WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 AND isActive = 1 ORDER BY name ASC")
+  fun getActiveProductsForUser(userId: String): Flow<List<ProductEntity>>
+
   @Query("SELECT * FROM products WHERE isDeleted = 0 AND currentStock <= lowStockThreshold ORDER BY currentStock ASC")
   fun getLowStockProducts(): Flow<List<ProductEntity>>
+
+  @Query("SELECT * FROM products WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0 AND currentStock <= lowStockThreshold ORDER BY currentStock ASC")
+  fun getLowStockProductsForUser(userId: String): Flow<List<ProductEntity>>
 
   @Query("SELECT * FROM products WHERE id = :id AND isDeleted = 0 LIMIT 1")
   fun getProductById(id: String): Flow<ProductEntity?>
@@ -50,10 +59,13 @@ interface ProductDao {
   @Query("SELECT * FROM products WHERE syncStatus IN ('PENDING', 'PENDING_DELETE')")
   suspend fun getPendingProducts(): List<ProductEntity>
 
+  @Query("SELECT * FROM products WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND syncStatus IN ('PENDING', 'PENDING_DELETE')")
+  suspend fun getPendingProductsForUser(userId: String): List<ProductEntity>
+
   @Query("UPDATE products SET syncStatus = :status WHERE id = :id")
   suspend fun updateSyncStatus(id: String, status: String)
 
-  @Query("UPDATE products SET userId = :newUserId, syncStatus = 'PENDING' WHERE userId = '' OR userId != :newUserId")
+  @Query("UPDATE products SET userId = :newUserId, syncStatus = 'PENDING' WHERE userId = '' OR userId IS NULL")
   suspend fun reassignProductsToUser(newUserId: String)
 
   @Query("DELETE FROM products")
@@ -62,6 +74,12 @@ interface ProductDao {
   @Query("SELECT COUNT(*) FROM products WHERE isDeleted = 0")
   suspend fun getProductCountDirect(): Int
 
+  @Query("SELECT COUNT(*) FROM products WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0")
+  suspend fun getProductCountDirectForUser(userId: String): Int
+
   @Query("SELECT COUNT(*) FROM products WHERE isDeleted = 0")
   fun getProductCountFlow(): Flow<Int>
+
+  @Query("SELECT COUNT(*) FROM products WHERE ((:userId = '' AND (userId = '' OR userId IS NULL)) OR (:userId != '' AND userId = :userId)) AND isDeleted = 0")
+  fun getProductCountFlowForUser(userId: String): Flow<Int>
 }

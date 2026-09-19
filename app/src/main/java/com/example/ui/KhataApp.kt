@@ -6,9 +6,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +20,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -34,12 +38,14 @@ import com.example.data.repository.TransactionResult
 import com.example.model.PlanType
 import com.example.model.SubscriptionEntitlement
 import com.example.model.TransactionType
+import com.example.payment.model.PaymentUiState
 import com.example.ui.components.AddTransactionDialog
 import com.example.ui.components.ExportDialog
 import com.example.ui.components.FirstLoginSyncChoiceDialog
 import com.example.ui.components.KhataBottomBar
 import com.example.ui.components.KhataTab
 import com.example.ui.components.LimitReachedDialog
+import com.example.ui.components.SignInDialog
 import com.example.ui.screens.AddCustomerScreen
 import com.example.ui.screens.AddEditProductScreen
 import com.example.ui.screens.BusinessProfileScreen
@@ -431,6 +437,15 @@ fun KhataApp(
                 }
               } else {
                 onResult(false, "Activity context unavailable")
+              }
+            },
+            onSignInDemo = {
+              viewModel.signInWithDemoAccount { success, msg ->
+                if (success) {
+                  coroutineScope.launch {
+                    snackbarHostState.showSnackbar("Signed in with Shop Profile!")
+                  }
+                }
               }
             },
             onSendPhoneOtp = { phone, onCodeSent, onError ->
@@ -900,9 +915,242 @@ fun KhataApp(
 
         // 19. Premium Screen
         composable("premium") {
+          val paymentState by viewModel.paymentUiState.collectAsStateWithLifecycle()
+          val currentActivity = context as? Activity
+          var showSignInDialog by remember { mutableStateOf(false) }
+
+          if (showSignInDialog) {
+            SignInDialog(
+              onDismiss = { showSignInDialog = false },
+              onSignInGoogle = { onResult ->
+                val act = context as? Activity
+                if (act != null) {
+                  viewModel.signInWithGoogle(act) { success, msg ->
+                    onResult(success, msg)
+                    if (success) {
+                      showSignInDialog = false
+                      coroutineScope.launch {
+                        snackbarHostState.showSnackbar("Signed in with Google successfully! You can now subscribe.")
+                      }
+                    }
+                  }
+                } else {
+                  onResult(false, "Activity context unavailable")
+                }
+              },
+              onSignInDemo = {
+                viewModel.signInWithDemoAccount { success, msg ->
+                  if (success) {
+                    showSignInDialog = false
+                    coroutineScope.launch {
+                      snackbarHostState.showSnackbar("Signed in with Shop Profile!")
+                    }
+                  }
+                }
+              },
+              onSendPhoneOtp = { phone, onCodeSent, onError ->
+                val act = context as? Activity
+                if (act != null) {
+                  viewModel.sendPhoneOtp(
+                    activity = act,
+                    phoneNumber = phone,
+                    onCodeSent = onCodeSent,
+                    onError = onError,
+                    onAutoVerified = {
+                      showSignInDialog = false
+                      coroutineScope.launch {
+                        snackbarHostState.showSnackbar("Phone verified and signed in!")
+                      }
+                    }
+                  )
+                } else {
+                  onError("Activity context unavailable")
+                }
+              },
+              onVerifyPhoneOtp = { verificationId, otp, onResult ->
+                viewModel.verifyPhoneOtp(verificationId, otp) { success, msg ->
+                  onResult(success, msg)
+                  if (success) {
+                    showSignInDialog = false
+                    coroutineScope.launch {
+                      snackbarHostState.showSnackbar("Phone sign-in successful!")
+                    }
+                  }
+                }
+              },
+              onResendPhoneOtp = { phone, onCodeSent, onError ->
+                val act = context as? Activity
+                if (act != null) {
+                  viewModel.resendPhoneOtp(
+                    activity = act,
+                    phoneNumber = phone,
+                    onCodeSent = onCodeSent,
+                    onError = onError
+                  )
+                }
+              }
+            )
+          }
+
+          when (val state = paymentState) {
+            is PaymentUiState.Processing -> {
+              AlertDialog(
+                onDismissRequest = {},
+                title = { Text("Processing") },
+                text = { Text(state.message) },
+                confirmButton = {}
+              )
+            }
+            is PaymentUiState.LoginRequired -> {
+              AlertDialog(
+                onDismissRequest = { viewModel.resetPaymentUiState() },
+                modifier = Modifier.testTag("dialog_login_required_premium"),
+                title = { Text("Sign In Required") },
+                text = { Text(state.message) },
+                confirmButton = {
+                  Button(
+                    onClick = {
+                      viewModel.resetPaymentUiState()
+                      showSignInDialog = true
+                    },
+                    modifier = Modifier.testTag("btn_go_to_login")
+                  ) {
+                    Text("Sign In Now")
+                  }
+                },
+                dismissButton = {
+                  androidx.compose.material3.TextButton(
+                    onClick = { viewModel.resetPaymentUiState() },
+                    modifier = Modifier.testTag("btn_cancel_login_required")
+                  ) {
+                    Text("Cancel")
+                  }
+                }
+              )
+            }
+            is PaymentUiState.Message -> {
+              AlertDialog(
+                onDismissRequest = { viewModel.resetPaymentUiState() },
+                modifier = Modifier.testTag("dialog_payment_message"),
+                title = { Text(state.title) },
+                text = { Text(state.text) },
+                confirmButton = {
+                  Button(
+                    onClick = { viewModel.resetPaymentUiState() },
+                    modifier = Modifier.testTag("btn_close_payment_message")
+                  ) {
+                    Text("OK")
+                  }
+                }
+              )
+            }
+            is PaymentUiState.PaymentStarted -> {
+              AlertDialog(
+                onDismissRequest = { viewModel.resetPaymentUiState() },
+                modifier = Modifier.testTag("dialog_payment_started"),
+                title = { Text("Pending Purchase Created") },
+                text = {
+                  Text("Pending purchase order ${state.orderId} created for ${state.planType.displayName} (₹${state.amount.toInt()}).\n\nStatus: PENDING.\n\nPremium will remain locked until verified by the trusted backend.")
+                },
+                confirmButton = {
+                  Button(
+                    onClick = { viewModel.resetPaymentUiState() },
+                    modifier = Modifier.testTag("btn_close_payment_started")
+                  ) {
+                    Text("OK")
+                  }
+                }
+              )
+            }
+            is PaymentUiState.AwaitingVerification -> {
+              AlertDialog(
+                onDismissRequest = { viewModel.resetPaymentUiState() },
+                modifier = Modifier.testTag("dialog_payment_verifying"),
+                title = { Text("Verifying Payment") },
+                text = { Text(state.message) },
+                confirmButton = {
+                  Button(
+                    onClick = { viewModel.resetPaymentUiState() },
+                    modifier = Modifier.testTag("btn_close_payment_verifying")
+                  ) {
+                    Text("Dismiss")
+                  }
+                }
+              )
+            }
+            is PaymentUiState.Success -> {
+              AlertDialog(
+                onDismissRequest = { viewModel.resetPaymentUiState() },
+                modifier = Modifier.testTag("dialog_payment_success"),
+                title = { Text("KhataGo Premium Unlocked") },
+                text = {
+                  Text("Congratulations! Your ${state.planType.displayName} is now active and verified by the server.")
+                },
+                confirmButton = {
+                  Button(
+                    onClick = { viewModel.resetPaymentUiState() },
+                    modifier = Modifier.testTag("btn_close_payment_success")
+                  ) {
+                    Text("Awesome")
+                  }
+                }
+              )
+            }
+            is PaymentUiState.Failed -> {
+              AlertDialog(
+                onDismissRequest = { viewModel.resetPaymentUiState() },
+                modifier = Modifier.testTag("dialog_payment_failed"),
+                title = { Text("Payment Failed") },
+                text = { Text(state.message) },
+                confirmButton = {
+                  Button(
+                    onClick = { viewModel.resetPaymentUiState() },
+                    modifier = Modifier.testTag("btn_close_payment_failed")
+                  ) {
+                    Text("OK")
+                  }
+                }
+              )
+            }
+            is PaymentUiState.Cancelled -> {
+              AlertDialog(
+                onDismissRequest = { viewModel.resetPaymentUiState() },
+                modifier = Modifier.testTag("dialog_payment_cancelled"),
+                title = { Text("Payment Cancelled") },
+                text = { Text("The payment was cancelled. You have not been charged.") },
+                confirmButton = {
+                  Button(
+                    onClick = { viewModel.resetPaymentUiState() },
+                    modifier = Modifier.testTag("btn_close_payment_cancelled")
+                  ) {
+                    Text("OK")
+                  }
+                }
+              )
+            }
+            else -> {}
+          }
+
           PremiumScreen(
             planMetrics = planMetrics,
-            onBackClick = { navController.popBackStack() }
+            onBackClick = { navController.popBackStack() },
+            onChooseMonthly = {
+              if (currentUser == null) {
+                showSignInDialog = true
+              } else {
+                viewModel.startMonthlyPurchase(currentActivity)
+              }
+            },
+            onChooseYearly = {
+              if (currentUser == null) {
+                showSignInDialog = true
+              } else {
+                viewModel.startYearlyPurchase(currentActivity)
+              }
+            },
+            onRestoreClick = {
+              viewModel.restorePremium()
+            }
           )
         }
       }
